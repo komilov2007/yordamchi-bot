@@ -1,0 +1,9 @@
+{
+  "name": "komilovs-business-ai",
+  "version": "1.0.0",
+  "description": "Telegram Business AI assistant for one owner account",
+  "main": "api/telegram.js",
+  "scripts": {
+    "dev": "vercel dev"
+  }
+}
