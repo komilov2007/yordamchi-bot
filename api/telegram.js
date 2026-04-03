@@ -1,8 +1,5 @@
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-
-// BU YERGA O'Z TELEGRAM USER ID'ingni yozasan
-// Masalan: OWNER_TELEGRAM_ID=7277207690
 const OWNER_TELEGRAM_ID = Number(process.env.OWNER_TELEGRAM_ID);
 
 const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -44,25 +41,6 @@ async function readBusinessMessage({
   });
 }
 
-async function sendBusinessChatAction({
-  businessConnectionId,
-  chatId,
-  action = 'typing',
-  messageThreadId,
-}) {
-  const body = {
-    business_connection_id: businessConnectionId,
-    chat_id: chatId,
-    action,
-  };
-
-  if (messageThreadId) {
-    body.message_thread_id = messageThreadId;
-  }
-
-  return telegram('sendChatAction', body);
-}
-
 async function sendBusinessMessage({
   businessConnectionId,
   chatId,
@@ -89,50 +67,68 @@ async function sendBusinessMessage({
   return telegram('sendMessage', body);
 }
 
-async function askGroq(userText) {
-  const response = await fetch(
-    'https://api.groq.com/openai/v1/chat/completions',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${GROQ_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        temperature: 0.6,
-        messages: [
-          {
-            role: 'system',
-            content: [
-              'Sen Komilovning shaxsiy Telegram assistentisan.',
-              "Faqat o'zbek tilida yoz.",
-              "Javoblar qisqa, aniq, muloyim bo'lsin.",
-              'Keraksiz uzun yozma.',
-              'Agar foydalanuvchi salom bersa, oddiy salom bilan javob ber.',
-              "Agar savol noaniq bo'lsa, qisqa aniqlashtiruvchi javob ber.",
-            ].join(' '),
-          },
-          {
-            role: 'user',
-            content: userText,
-          },
-        ],
-      }),
-    }
-  );
+async function sendBusinessChatAction({
+  businessConnectionId,
+  chatId,
+  action = 'typing',
+  messageThreadId,
+}) {
+  const body = {
+    business_connection_id: businessConnectionId,
+    chat_id: chatId,
+    action,
+  };
 
-  const data = await response.json();
-
-  if (!response.ok) {
-    console.error('Groq API error:', data);
-    return "Kechirasiz, hozir javob berishda xatolik bo'ldi.";
+  if (messageThreadId) {
+    body.message_thread_id = messageThreadId;
   }
 
-  return (
-    data?.choices?.[0]?.message?.content?.trim() ||
-    "Kechirasiz, hozir javob tayyor bo'lmadi."
-  );
+  return telegram('sendChatAction', body);
+}
+
+async function askGroq(userText) {
+  try {
+    const response = await fetch(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          temperature: 0.6,
+          messages: [
+            {
+              role: 'system',
+              content:
+                "Sen Komilovning shaxsiy AI yordamchisisan. Faqat o'zbek tilida yoz. Javoblar qisqa, aniq, muloyim va tushunarli bo'lsin.",
+            },
+            {
+              role: 'user',
+              content: userText,
+            },
+          ],
+        }),
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('Groq API error:', data);
+      return "Kechirasiz, hozir javob berishda xatolik bo'ldi.";
+    }
+
+    return (
+      data?.choices?.[0]?.message?.content?.trim() ||
+      "Kechirasiz, hozir javob tayyor bo'lmadi."
+    );
+  } catch (error) {
+    console.error('askGroq error:', error);
+    return "Kechirasiz, hozir javob berishda xatolik bo'ldi.";
+  }
 }
 
 function isCommand(text, command) {
@@ -145,7 +141,7 @@ module.exports = async (req, res) => {
   if (!BOT_TOKEN || !GROQ_API_KEY || !OWNER_TELEGRAM_ID) {
     return res.status(500).json({
       ok: false,
-      error: 'BOT_TOKEN, GROQ_API_KEY yoki OWNER_TELEGRAM_ID yo‘q',
+      error: 'BOT_TOKEN, GROQ_API_KEY yoki OWNER_TELEGRAM_ID topilmadi',
     });
   }
 
@@ -166,42 +162,84 @@ module.exports = async (req, res) => {
   try {
     const update = req.body || {};
 
-    // 1) Business connection update
+    // 1) BUSINESS CONNECTION UPDATE
     if (update.business_connection) {
       const bc = update.business_connection;
 
-      // Faqat o'zingning akkauntingni qabul qilamiz
       if (Number(bc?.user?.id) !== OWNER_TELEGRAM_ID) {
         return res.status(200).json({ ok: true });
       }
 
-      // Connection aktiv bo'lsa, o'zingga xabar yuboramiz
-      if (bc.is_enabled) {
-        try {
-          await telegram('sendMessage', {
-            chat_id: bc.user_chat_id,
-            text:
-              '✅ Business bot ulandi.\n' +
-              'Endi menga yozgan odamlarga shu bot javob bera oladi.',
-          });
-        } catch (e) {
-          console.error('Notify owner connection enabled error:', e.message);
-        }
-      } else {
-        try {
-          await telegram('sendMessage', {
-            chat_id: bc.user_chat_id,
-            text: '⚠️ Business bot uzildi yoki o‘chirildi.',
-          });
-        } catch (e) {
-          console.error('Notify owner connection disabled error:', e.message);
-        }
+      try {
+        await telegram('sendMessage', {
+          chat_id: bc.user_chat_id,
+          text: bc.is_enabled
+            ? '✅ Business bot muvaffaqiyatli ulandi.'
+            : '⚠️ Business bot uzildi yoki o‘chirildi.',
+        });
+      } catch (e) {
+        console.error('business_connection notify error:', e.message);
       }
 
       return res.status(200).json({ ok: true });
     }
 
-    // 2) Faqat business_message bilan ishlaymiz
+    // 2) ODDIY BOT CHATLARI UCHUN
+    const normalMsg = update.message;
+    if (normalMsg && normalMsg.chat) {
+      const chatId = normalMsg.chat.id;
+      const text = normalMsg.text?.trim();
+
+      if (!text) {
+        return res.status(200).json({ ok: true });
+      }
+
+      if (normalMsg.from?.is_bot) {
+        return res.status(200).json({ ok: true });
+      }
+
+      if (isCommand(text, '/start')) {
+        await telegram('sendMessage', {
+          chat_id: chatId,
+          text:
+            'Assalomu alaykum 👋\n' +
+            'Men Komilovning AI yordamchisiman.\n' +
+            'Savolingizni yozing.',
+        });
+
+        return res.status(200).json({ ok: true });
+      }
+
+      if (isCommand(text, '/help')) {
+        await telegram('sendMessage', {
+          chat_id: chatId,
+          text:
+            'Menga savol yozing.\n' + 'Men qisqa va tushunarli javob beraman.',
+        });
+
+        return res.status(200).json({ ok: true });
+      }
+
+      try {
+        await telegram('sendChatAction', {
+          chat_id: chatId,
+          action: 'typing',
+        });
+      } catch (e) {
+        console.error('normal sendChatAction error:', e.message);
+      }
+
+      const reply = await askGroq(text);
+
+      await telegram('sendMessage', {
+        chat_id: chatId,
+        text: reply,
+      });
+
+      return res.status(200).json({ ok: true });
+    }
+
+    // 3) BUSINESS MESSAGE UCHUN
     const msg = update.business_message;
     if (!msg) {
       return res.status(200).json({ ok: true });
@@ -217,20 +255,16 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // Outgoing / bot yuborgan / offline auto message'larni o'tkazib yuboramiz
     if (msg.from?.is_bot || msg.sender_business_bot || msg.is_from_offline) {
       return res.status(200).json({ ok: true });
     }
 
-    // Matn bo'lmasa hozircha javob bermaymiz
     if (!text) {
       return res.status(200).json({ ok: true });
     }
 
-    // Connection kimniki ekanini har safar tekshiramiz
     const connection = await getBusinessConnection(businessConnectionId);
 
-    // Faqat sening akkaunting bo'lsa ishlaydi
     if (!connection?.is_enabled) {
       return res.status(200).json({ ok: true });
     }
@@ -239,13 +273,11 @@ module.exports = async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    // Reply huquqi bo'lishi kerak
     if (!connection?.rights?.can_reply) {
-      console.error('Botda can_reply huquqi yo‘q');
+      console.error('Business botda can_reply huquqi yo‘q');
       return res.status(200).json({ ok: true });
     }
 
-    // Read huquqi bo'lsa, o'qilgan qilamiz
     if (connection?.rights?.can_read_messages) {
       try {
         await readBusinessMessage({
@@ -258,7 +290,6 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Maxsus komandalar
     if (isCommand(text, '/start')) {
       await sendBusinessMessage({
         businessConnectionId,
@@ -296,7 +327,7 @@ module.exports = async (req, res) => {
         messageThreadId,
       });
     } catch (e) {
-      console.error('sendChatAction error:', e.message);
+      console.error('business sendChatAction error:', e.message);
     }
 
     const reply = await askGroq(text);

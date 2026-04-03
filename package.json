@@ -1,7 +1,7 @@
 {
-  "name": "komilovs-business-ai",
+  "name": "yordamchi-bot",
   "version": "1.0.0",
-  "description": "Telegram Business AI assistant for one owner account",
+  "description": "Telegram Business AI bot",
   "main": "api/telegram.js",
   "scripts": {
     "dev": "vercel dev"
